@@ -14,6 +14,7 @@ finance_records.xlsx
 # Backup files
 backups/
 *.sql
+!db/init.sql
 *.dump
 
 # Logs
