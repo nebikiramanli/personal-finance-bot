@@ -1,0 +1,267 @@
+{
+  "name": "04 - Recurring Payment Reminder",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Daily Cron Trigger",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const today = new Date();\nconst dayOfMonth = today.getDate();\nreturn { json: { day: dayOfMonth } };"
+      },
+      "id": "get-today",
+      "name": "Get Today's Day",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, name, type, amount, currency, due_day, category, description FROM recurring_payments WHERE is_active = TRUE AND due_day = {{$json.day}} AND (last_reminded_at IS NULL OR last_reminded_at < CURRENT_DATE)"
+      },
+      "id": "fetch-payments",
+      "name": "Fetch Due Payments",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [650, 300],
+      "credentials": {
+        "postgres": {
+          "id": "2",
+          "name": "Finance DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$json.length}}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "check-has-payments",
+      "name": "Has Payments Due",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "split-payments",
+      "name": "Split Into Items",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const payment = $input.first().json;\n\nconst typeEmoji = {\n  'subscription': '📺',\n  'bill': '📄',\n  'rent': '🏠',\n  'insurance': '🛡️',\n  'loan': '💳',\n  'other': '📌'\n};\n\nconst emoji = typeEmoji[payment.type] || '📌';\n\nconst message = `🔔 *Ödeme Hatırlatması*\\n\\n${emoji} *${payment.name}*\\n💰 Tutar: ${payment.amount} ${payment.currency}\\n📁 Kategori: ${payment.category || 'Belirtilmemiş'}\\n📅 Ödeme Günü: ${payment.due_day}\\n📝 ${payment.description || ''}`;\n\nreturn { \n  json: { \n    message: message,\n    payment_id: payment.id \n  } \n};"
+      },
+      "id": "format-message",
+      "name": "Format Reminder Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 200]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$env.ALLOWED_CHAT_ID}}",
+        "text": "={{$json.message}}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "send-reminder",
+      "name": "Send Reminder",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1450, 200],
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE recurring_payments SET last_reminded_at = CURRENT_DATE WHERE id = {{$json.payment_id}}"
+      },
+      "id": "update-reminded",
+      "name": "Update Last Reminded",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1650, 200],
+      "credentials": {
+        "postgres": {
+          "id": "2",
+          "name": "Finance DB"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "loop-back",
+      "name": "Loop Back",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1850, 200]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$env.ALLOWED_CHAT_ID}}",
+        "text": "✅ Bugün için ödeme hatırlatması yok."
+      },
+      "id": "no-payments-message",
+      "name": "No Payments Message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1050, 400],
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily Cron Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Today's Day",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Today's Day": {
+      "main": [
+        [
+          {
+            "node": "Fetch Due Payments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Due Payments": {
+      "main": [
+        [
+          {
+            "node": "Has Payments Due",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Payments Due": {
+      "main": [
+        [
+          {
+            "node": "Split Into Items",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Payments Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Into Items": {
+      "main": [
+        [
+          {
+            "node": "Format Reminder Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Reminder Message": {
+      "main": [
+        [
+          {
+            "node": "Send Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Reminder": {
+      "main": [
+        [
+          {
+            "node": "Update Last Reminded",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Last Reminded": {
+      "main": [
+        [
+          {
+            "node": "Loop Back",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Back": {
+      "main": [
+        [
+          {
+            "node": "Split Into Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2026-02-07T23:34:27.213Z",
+  "versionId": "1"
+}

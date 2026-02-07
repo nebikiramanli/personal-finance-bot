@@ -1,0 +1,437 @@
+{
+  "name": "02 - Photo OCR Handler",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": ["message"]
+      },
+      "id": "telegram-trigger-photo",
+      "name": "Telegram Photo Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "telegram-photo-webhook",
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.message.chat.id}}",
+              "value2": "={{$env.ALLOWED_CHAT_ID}}"
+            }
+          ]
+        }
+      },
+      "id": "check-chat-id-photo",
+      "name": "Check Chat ID",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json.message.chat.id}}",
+        "text": "📸 Fotoğraf işleniyor..."
+      },
+      "id": "processing-message",
+      "name": "Send Processing Message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [650, 200],
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "fileId": "={{$json.message.photo[$json.message.photo.length - 1].file_id}}"
+      },
+      "id": "get-photo",
+      "name": "Get Photo File",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [850, 200],
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.TESSERACT_API_URL}}/ocr",
+        "options": {
+          "timeout": 30000
+        },
+        "sendBinaryData": true,
+        "binaryPropertyName": "data"
+      },
+      "id": "call-tesseract",
+      "name": "Call Tesseract OCR",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ocrText = $input.first().json.text || '';\nreturn { json: { ocrText: ocrText.trim() } };"
+      },
+      "id": "extract-text",
+      "name": "Extract OCR Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.ocrText}}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "check-ocr-success",
+      "name": "Check OCR Success",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1450, 200]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$node[\"Telegram Photo Trigger\"].json.message.chat.id}}",
+        "text": "❌ Fotoğraftan metin çıkarılamadı. Lütfen daha net bir fotoğraf gönderin veya manuel olarak giriş yapın."
+      },
+      "id": "ocr-fail-message",
+      "name": "Send OCR Fail Message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1650, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "filePath": "/prompts/finance_parser.txt"
+      },
+      "id": "read-prompt-photo",
+      "name": "Read Prompt",
+      "type": "n8n-nodes-base.readBinaryFile",
+      "typeVersion": 1,
+      "position": [1650, 100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.OLLAMA_BASE_URL}}/api/generate",
+        "options": {
+          "timeout": 30000
+        },
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "llama3.1"
+            },
+            {
+              "name": "prompt",
+              "value": "={{$node[\"Read Prompt\"].json.data}}\\n\\nOCR Çıktısı: {{$node[\"Extract OCR Text\"].json.ocrText}}\\n\\nSadece JSON döndür, başka açıklama yapma."
+            },
+            {
+              "name": "stream",
+              "value": false
+            }
+          ]
+        }
+      },
+      "id": "call-ollama-photo",
+      "name": "Call Ollama LLM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1850, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json.response;\nconst parsedData = JSON.parse(response);\n\n// Generate fingerprint\nconst crypto = require('crypto');\nconst fingerprintString = `${parsedData.date}_${parsedData.amount}_${parsedData.description}`;\nconst fingerprint = crypto.createHash('sha256').update(fingerprintString).digest('hex');\n\nparsedData.fingerprint = fingerprint;\nparsedData.telegram_message_id = $('Telegram Photo Trigger').first().json.message.message_id;\nparsedData.raw_input = $('Extract OCR Text').first().json.ocrText;\nparsedData.source = 'photo';\n\nreturn { json: parsedData };"
+      },
+      "id": "parse-response-photo",
+      "name": "Parse LLM Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2050, 100]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id FROM {{$json.type}}s WHERE fingerprint = '{{$json.fingerprint}}' LIMIT 1"
+      },
+      "id": "check-duplicate-photo",
+      "name": "Check Duplicate",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [2250, 100],
+      "credentials": {
+        "postgres": {
+          "id": "2",
+          "name": "Finance DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$json.length}}",
+              "operation": "equal",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "is-not-duplicate-photo",
+      "name": "Is Not Duplicate",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [2450, 100]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO {{$node[\"Parse LLM Response\"].json.type}}s (telegram_message_id, date, amount, currency, category, subcategory, bank, payment_method, source_name, description, fingerprint, confidence_score, source, raw_input, asset_type, asset_name, transaction_type, quantity, unit_price) VALUES ({{$node[\"Parse LLM Response\"].json.telegram_message_id}}, '{{$node[\"Parse LLM Response\"].json.date}}', {{$node[\"Parse LLM Response\"].json.amount}}, '{{$node[\"Parse LLM Response\"].json.currency}}', '{{$node[\"Parse LLM Response\"].json.category}}', '{{$node[\"Parse LLM Response\"].json.subcategory}}', '{{$node[\"Parse LLM Response\"].json.bank}}', '{{$node[\"Parse LLM Response\"].json.payment_method}}', '{{$node[\"Parse LLM Response\"].json.source_name}}', '{{$node[\"Parse LLM Response\"].json.description}}', '{{$node[\"Parse LLM Response\"].json.fingerprint}}', {{$node[\"Parse LLM Response\"].json.confidence}}, '{{$node[\"Parse LLM Response\"].json.source}}', '{{$node[\"Parse LLM Response\"].json.raw_input}}', '{{$node[\"Parse LLM Response\"].json.asset_type}}', '{{$node[\"Parse LLM Response\"].json.asset_name}}', '{{$node[\"Parse LLM Response\"].json.transaction_type}}', {{$node[\"Parse LLM Response\"].json.quantity}}, {{$node[\"Parse LLM Response\"].json.unit_price}}) RETURNING id"
+      },
+      "id": "insert-db-photo",
+      "name": "Insert to Database",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [2650, 100],
+      "credentials": {
+        "postgres": {
+          "id": "2",
+          "name": "Finance DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{$node[\"Telegram Photo Trigger\"].json.message.chat.id}}",
+        "text": "✅ Fotoğraftan kayıt eklendi!\\n\\n📊 Tür: {{$node[\"Parse LLM Response\"].json.type}}\\n💰 Tutar: {{$node[\"Parse LLM Response\"].json.amount}} {{$node[\"Parse LLM Response\"].json.currency}}\\n📁 Kategori: {{$node[\"Parse LLM Response\"].json.category}}\\n📝 Açıklama: {{$node[\"Parse LLM Response\"].json.description}}\\n📅 Tarih: {{$node[\"Parse LLM Response\"].json.date}}"
+      },
+      "id": "send-success-photo",
+      "name": "Send Success Message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [2850, 100],
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{$node[\"Telegram Photo Trigger\"].json.message.chat.id}}",
+        "text": "⚠️ Bu kayıt zaten mevcut! Tekrar eklenmedi."
+      },
+      "id": "send-duplicate-photo",
+      "name": "Send Duplicate Message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [2650, 200],
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Photo Trigger": {
+      "main": [
+        [
+          {
+            "node": "Check Chat ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Chat ID": {
+      "main": [
+        [
+          {
+            "node": "Send Processing Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Processing Message": {
+      "main": [
+        [
+          {
+            "node": "Get Photo File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Photo File": {
+      "main": [
+        [
+          {
+            "node": "Call Tesseract OCR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Tesseract OCR": {
+      "main": [
+        [
+          {
+            "node": "Extract OCR Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract OCR Text": {
+      "main": [
+        [
+          {
+            "node": "Check OCR Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check OCR Success": {
+      "main": [
+        [
+          {
+            "node": "Read Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send OCR Fail Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Prompt": {
+      "main": [
+        [
+          {
+            "node": "Call Ollama LLM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Ollama LLM": {
+      "main": [
+        [
+          {
+            "node": "Parse LLM Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse LLM Response": {
+      "main": [
+        [
+          {
+            "node": "Check Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Duplicate": {
+      "main": [
+        [
+          {
+            "node": "Is Not Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Not Duplicate": {
+      "main": [
+        [
+          {
+            "node": "Insert to Database",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Duplicate Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert to Database": {
+      "main": [
+        [
+          {
+            "node": "Send Success Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2026-02-07T23:34:27.213Z",
+  "versionId": "1"
+}

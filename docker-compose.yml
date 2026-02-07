@@ -1,0 +1,112 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: finance-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      TZ: ${TZ}
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - finance-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # n8n Workflow Automation
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: finance-n8n
+    restart: unless-stopped
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD}
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=${POSTGRES_DB}
+      - DB_POSTGRESDB_USER=${POSTGRES_USER}
+      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - ALLOWED_CHAT_ID=${ALLOWED_CHAT_ID}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL}
+      - TESSERACT_API_URL=${TESSERACT_API_URL}
+      - EXCEL_FILE_PATH=${EXCEL_FILE_PATH}
+      - TZ=${TZ}
+      - GENERIC_TIMEZONE=${TZ}
+    ports:
+      - "${N8N_PORT}:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./n8n/workflows:/workflows
+      - excel_data:/data
+    networks:
+      - finance-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+
+  # Ollama LLM Service
+  ollama:
+    image: ollama/ollama:latest
+    container_name: finance-ollama
+    restart: unless-stopped
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    ports:
+      - "${OLLAMA_PORT}:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+      - ./ollama/prompts:/prompts
+    networks:
+      - finance-network
+    # Uncomment for GPU support
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # Tesseract OCR Service
+  tesseract:
+    image: hertzg/tesseract-server:latest
+    container_name: finance-tesseract
+    restart: unless-stopped
+    environment:
+      - TESSDATA_PREFIX=/usr/share/tesseract-ocr/4.00/tessdata
+    ports:
+      - "${TESSERACT_PORT}:8884"
+    networks:
+      - finance-network
+    command: ["tesseract-server", "-l", "tur+eng", "-p", "8884"]
+
+volumes:
+  postgres_data:
+    driver: local
+  n8n_data:
+    driver: local
+  ollama_data:
+    driver: local
+  excel_data:
+    driver: local
+
+networks:
+  finance-network:
+    driver: bridge

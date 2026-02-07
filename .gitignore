@@ -1,0 +1,38 @@
+# Environment variables
+.env
+
+# Docker volumes
+postgres_data/
+n8n_data/
+ollama_data/
+tesseract_data/
+
+# Excel files
+*.xlsx
+finance_records.xlsx
+
+# Backup files
+backups/
+*.sql
+!db/init.sql
+*.dump
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+tmp/
+temp/
+*.tmp

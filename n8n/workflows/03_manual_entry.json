@@ -1,0 +1,455 @@
+{
+  "name": "03 - Manual Entry",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": ["message"],
+        "additionalFields": {
+          "download": false
+        }
+      },
+      "id": "telegram-trigger-manual",
+      "name": "Telegram Command Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "telegram-manual-webhook",
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.message.text}}",
+              "operation": "startsWith",
+              "value2": "/ekle"
+            },
+            {
+              "value1": "={{$json.message.chat.id}}",
+              "value2": "={{$env.ALLOWED_CHAT_ID}}"
+            }
+          ]
+        }
+      },
+      "id": "check-command",
+      "name": "Check /ekle Command",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json.message.chat.id}}",
+        "text": "📝 Manuel Kayıt Girişi\\n\\nHangi tür kayıt eklemek istiyorsunuz?\\n\\n1️⃣ Harcama\\n2️⃣ Gelir\\n3️⃣ Yatırım\\n\\nLütfen numara ile cevap verin (1, 2 veya 3)"
+      },
+      "id": "ask-type",
+      "name": "Ask Type",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [650, 200],
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "* * * * *"
+            }
+          ]
+        }
+      },
+      "id": "wait-response-type",
+      "name": "Wait for Type Response",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [850, 200],
+      "webhookId": "manual-entry-type-wait"
+    },
+    {
+      "parameters": {
+        "chatId": "={{$node[\"Telegram Command Trigger\"].json.message.chat.id}}",
+        "text": "💰 Tutar nedir? (Örnek: 850 veya 850.50)"
+      },
+      "id": "ask-amount",
+      "name": "Ask Amount",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1050, 200],
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "* * * * *"
+            }
+          ]
+        }
+      },
+      "id": "wait-response-amount",
+      "name": "Wait for Amount Response",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1250, 200],
+      "webhookId": "manual-entry-amount-wait"
+    },
+    {
+      "parameters": {
+        "chatId": "={{$node[\"Telegram Command Trigger\"].json.message.chat.id}}",
+        "text": "📁 Kategori nedir? (Örnek: market, restoran, maaş, hisse vb.)"
+      },
+      "id": "ask-category",
+      "name": "Ask Category",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1450, 200],
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "* * * * *"
+            }
+          ]
+        }
+      },
+      "id": "wait-response-category",
+      "name": "Wait for Category Response",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1650, 200],
+      "webhookId": "manual-entry-category-wait"
+    },
+    {
+      "parameters": {
+        "chatId": "={{$node[\"Telegram Command Trigger\"].json.message.chat.id}}",
+        "text": "📝 Açıklama? (İsteğe bağlı, boş bırakmak için 'yok' yazın)"
+      },
+      "id": "ask-description",
+      "name": "Ask Description",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1850, 200],
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "* * * * *"
+            }
+          ]
+        }
+      },
+      "id": "wait-response-description",
+      "name": "Wait for Description Response",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [2050, 200],
+      "webhookId": "manual-entry-description-wait"
+    },
+    {
+      "parameters": {
+        "jsCode": "const typeMap = { '1': 'expense', '2': 'income', '3': 'investment' };\nconst type = typeMap[$node[\"Wait for Type Response\"].json.message.text] || 'expense';\nconst amount = parseFloat($node[\"Wait for Amount Response\"].json.message.text);\nconst category = $node[\"Wait for Category Response\"].json.message.text;\nconst description = $node[\"Wait for Description Response\"].json.message.text === 'yok' ? category : $node[\"Wait for Description Response\"].json.message.text;\nconst today = new Date().toISOString().split('T')[0];\n\nconst crypto = require('crypto');\nconst fingerprintString = `${today}_${amount}_${description}`;\nconst fingerprint = crypto.createHash('sha256').update(fingerprintString).digest('hex');\n\nreturn {\n  json: {\n    type: type,\n    date: today,\n    amount: amount,\n    currency: 'TRY',\n    category: category,\n    description: description,\n    fingerprint: fingerprint,\n    confidence_score: 1.0,\n    source: 'manual',\n    raw_input: `Type: ${type}, Amount: ${amount}, Category: ${category}, Description: ${description}`,\n    telegram_message_id: $node[\"Telegram Command Trigger\"].json.message.message_id\n  }\n};"
+      },
+      "id": "prepare-data",
+      "name": "Prepare Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2250, 200]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id FROM {{$json.type}}s WHERE fingerprint = '{{$json.fingerprint}}' LIMIT 1"
+      },
+      "id": "check-duplicate-manual",
+      "name": "Check Duplicate",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [2450, 200],
+      "credentials": {
+        "postgres": {
+          "id": "2",
+          "name": "Finance DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$json.length}}",
+              "operation": "equal",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "is-not-duplicate-manual",
+      "name": "Is Not Duplicate",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [2650, 200]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO {{$node[\"Prepare Data\"].json.type}}s (telegram_message_id, date, amount, currency, category, description, fingerprint, confidence_score, source, raw_input) VALUES ({{$node[\"Prepare Data\"].json.telegram_message_id}}, '{{$node[\"Prepare Data\"].json.date}}', {{$node[\"Prepare Data\"].json.amount}}, '{{$node[\"Prepare Data\"].json.currency}}', '{{$node[\"Prepare Data\"].json.category}}', '{{$node[\"Prepare Data\"].json.description}}', '{{$node[\"Prepare Data\"].json.fingerprint}}', {{$node[\"Prepare Data\"].json.confidence_score}}, '{{$node[\"Prepare Data\"].json.source}}', '{{$node[\"Prepare Data\"].json.raw_input}}') RETURNING id"
+      },
+      "id": "insert-db-manual",
+      "name": "Insert to Database",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [2850, 200],
+      "credentials": {
+        "postgres": {
+          "id": "2",
+          "name": "Finance DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{$node[\"Telegram Command Trigger\"].json.message.chat.id}}",
+        "text": "✅ Manuel kayıt eklendi!\\n\\n📊 Tür: {{$node[\"Prepare Data\"].json.type}}\\n💰 Tutar: {{$node[\"Prepare Data\"].json.amount}} {{$node[\"Prepare Data\"].json.currency}}\\n📁 Kategori: {{$node[\"Prepare Data\"].json.category}}\\n📝 Açıklama: {{$node[\"Prepare Data\"].json.description}}\\n📅 Tarih: {{$node[\"Prepare Data\"].json.date}}"
+      },
+      "id": "send-success-manual",
+      "name": "Send Success Message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [3050, 200],
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{$node[\"Telegram Command Trigger\"].json.message.chat.id}}",
+        "text": "⚠️ Bu kayıt zaten mevcut! Tekrar eklenmedi."
+      },
+      "id": "send-duplicate-manual",
+      "name": "Send Duplicate Message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [2850, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Command Trigger": {
+      "main": [
+        [
+          {
+            "node": "Check /ekle Command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check /ekle Command": {
+      "main": [
+        [
+          {
+            "node": "Ask Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask Type": {
+      "main": [
+        [
+          {
+            "node": "Wait for Type Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for Type Response": {
+      "main": [
+        [
+          {
+            "node": "Ask Amount",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask Amount": {
+      "main": [
+        [
+          {
+            "node": "Wait for Amount Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for Amount Response": {
+      "main": [
+        [
+          {
+            "node": "Ask Category",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask Category": {
+      "main": [
+        [
+          {
+            "node": "Wait for Category Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for Category Response": {
+      "main": [
+        [
+          {
+            "node": "Ask Description",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask Description": {
+      "main": [
+        [
+          {
+            "node": "Wait for Description Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for Description Response": {
+      "main": [
+        [
+          {
+            "node": "Prepare Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Data": {
+      "main": [
+        [
+          {
+            "node": "Check Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Duplicate": {
+      "main": [
+        [
+          {
+            "node": "Is Not Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Not Duplicate": {
+      "main": [
+        [
+          {
+            "node": "Insert to Database",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Duplicate Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert to Database": {
+      "main": [
+        [
+          {
+            "node": "Send Success Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2026-02-07T23:34:27.213Z",
+  "versionId": "1"
+}
